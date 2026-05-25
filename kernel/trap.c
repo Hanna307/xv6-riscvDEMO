@@ -6,6 +6,7 @@
 #include "proc.h"
 #include "defs.h"
 
+void update_wait_time(void);
 struct spinlock tickslock;
 uint ticks;
 
@@ -166,14 +167,15 @@ clockintr()
 {
   if(cpuid() == 0){
     acquire(&tickslock);
+
     ticks++;
+    update_wait_time();
     wakeup(&ticks);
+
     release(&tickslock);
   }
 
-  // ask for the next timer interrupt. this also clears
-  // the interrupt request. 1000000 is about a tenth
-  // of a second.
+  // ask for the next timer interrupt.
   w_stimecmp(r_time() + 1000000);
 }
 

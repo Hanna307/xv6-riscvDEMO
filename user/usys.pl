@@ -40,5 +40,8 @@ entry("chdir");
 entry("dup");
 entry("getpid");
 entry("sbrk");
-entry("pause");
 entry("uptime");
+entry("sleep");
+
+entry("set_priority");
+entry("print_pinfo");

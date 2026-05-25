@@ -107,3 +107,60 @@ sys_uptime(void)
   release(&tickslock);
   return xticks;
 }
+
+//
+uint64
+sys_sleep(void)
+{
+  int n;
+  uint ticks0;
+
+  // Gọi thẳng argint vì nó trả về void, không cần if check
+  argint(0, &n);
+  
+  acquire(&tickslock);
+  ticks0 = ticks;
+  while(ticks - ticks0 < n){
+    if(myproc()->killed){
+      release(&tickslock);
+      return -1;
+    }
+    sleep(&ticks, &tickslock);
+  }
+  release(&tickslock);
+  return 0;
+}
+
+//
+// 1. Khai báo extern để file sysproc.c được phép "nhìn thấy" mảng proc từ file proc.c
+extern struct proc proc[NPROC];
+
+// 2. Sửa lại các hàm System Call
+uint64 sys_set_priority(void) {
+  int prio;
+  // xv6-riscv: argint trả về void nên chỉ cần gọi thẳng, không cần if check
+  argint(0, &prio); 
+  
+  struct proc *p = myproc();
+  acquire(&p->lock);
+  p->priority = prio;
+  release(&p->lock);
+  return 0;
+}
+
+uint64 sys_print_pinfo(void) {
+  struct proc *p;
+  printf("\nPID\tSTATE\t\tPRIO\tWAIT_TIME\n");
+  for(p = proc; p < &proc[NPROC]; p++){
+    acquire(&p->lock);
+    if(p->state != UNUSED){
+      char *state_str = (p->state == RUNNABLE) ? "RUNNABLE" : 
+                        (p->state == RUNNING)  ? "RUNNING " : 
+                        (p->state == SLEEPING) ? "SLEEPING" : 
+                        (p->state == ZOMBIE)   ? "ZOMBIE  " : "OTHER   ";
+      printf("%d\t%s\t%d\t%d\n", p->pid, state_str, p->priority, p->wait_time);
+    }
+    release(&p->lock);
+  }
+  return 0;
+}

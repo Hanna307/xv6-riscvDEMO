@@ -7,6 +7,7 @@
 #include "defs.h"
 
 struct cpu cpus[NCPU];
+extern uint ticks;
 
 struct proc proc[NPROC];
 
@@ -124,6 +125,9 @@ allocproc(void)
 found:
   p->pid = allocpid();
   p->state = USED;
+  p->priority = 1;
+  p->wait_time = 0;
+  p->last_run = 0;
 
   // Allocate a trapframe page.
   if((p->trapframe = (struct trapframe *)kalloc()) == 0){
@@ -145,7 +149,9 @@ found:
   memset(&p->context, 0, sizeof(p->context));
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
-
+  p->wait_time = 0;
+  p->priority = 1;
+  p->last_run = 0;
   return p;
 }
 
@@ -421,6 +427,40 @@ kwait(uint64 addr)
 //  - swtch to start running that process.
 //  - eventually that process transfers control
 //    via swtch back to the scheduler.
+#define AGING_THRESHOLD 100
+#define MAX_PRIORITY 10
+void update_wait_time(void) {
+    struct proc *p;
+
+    for(p = proc; p < &proc[NPROC]; p++) {
+
+        acquire(&p->lock);
+
+        if(p->state == RUNNABLE ) {
+            p->wait_time++;
+
+    if(p->wait_time > AGING_THRESHOLD){
+
+        if(p->priority < MAX_PRIORITY){
+
+            p->priority++;
+
+            printf("PID %d boosted to priority %d\n",
+                   p->pid,
+                   p->priority);
+        }
+
+        p->wait_time = 0;
+    }
+        }
+
+     //   if(p->state == RUNNING) {
+       //     p->wait_time = 0;
+       // }
+
+        release(&p->lock);
+    }
+}
 void
 scheduler(void)
 {
@@ -428,40 +468,87 @@ scheduler(void)
   struct cpu *c = mycpu();
 
   c->proc = 0;
+
   for(;;){
-    // The most recent process to run may have had interrupts
-    // turned off; enable them to avoid a deadlock if all
-    // processes are waiting. Then turn them back off
-    // to avoid a possible race between an interrupt
-    // and wfi.
+
+    // bật interrupt
     intr_on();
-    intr_off();
 
-    int found = 0;
+    int max_prio = 0;
+
+    // ===================================
+    // VÒNG 1: AGING + TÌM PRIORITY MAX
+    // ===================================
+
     for(p = proc; p < &proc[NPROC]; p++) {
-      acquire(&p->lock);
-      if(p->state == RUNNABLE) {
-        // Switch to chosen process.  It is the process's job
-        // to release its lock and then reacquire it
-        // before jumping back to us.
-        p->state = RUNNING;
-        c->proc = p;
-        swtch(&c->context, &p->context);
 
-        // Process is done running for now.
-        // It should have changed its p->state before coming back.
-        c->proc = 0;
-        found = 1;
+      acquire(&p->lock);
+
+      if(p->state == RUNNABLE) {
+
+        // tăng wait time
+        p->wait_time++;
+
+        // AGING
+        if(p->wait_time >= 10) {
+
+          printf("AGING: pid %d priority -> %d\n",
+                 p->pid,
+                 p->priority + 1);
+
+          if(p->priority < 10) {
+            p->priority++;
+          }
+
+          p->wait_time = 0;
+        }
+
+        // tìm priority lớn nhất
+        if(p->priority > max_prio) {
+          max_prio = p->priority;
+        }
       }
+
       release(&p->lock);
     }
-    if(found == 0) {
-      // nothing to run; stop running on this core until an interrupt.
-      asm volatile("wfi");
+
+    // ===================================
+    // VÒNG 2: CHỌN PROCESS ĐỂ CHẠY
+    // ===================================
+
+    if(max_prio > 0) {
+
+      for(p = proc; p < &proc[NPROC]; p++) {
+
+        acquire(&p->lock);
+
+        if(p->state == RUNNABLE &&
+           p->priority == max_prio) {
+
+          p->state = RUNNING;
+
+          p->wait_time = 0;
+
+          c->proc = p;
+
+          swtch(&c->context, &p->context);
+
+          c->proc = 0;
+
+          if(p->priority > 2){
+             p->priority--;
+}
+          release(&p->lock);
+
+          break;
+        }
+        else {
+          release(&p->lock);
+        }
+      }
     }
   }
 }
-
 // Switch to scheduler.  Must hold only p->lock
 // and have changed proc->state. Saves and restores
 // intena because intena is a property of this

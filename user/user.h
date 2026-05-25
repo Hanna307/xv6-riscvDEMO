@@ -22,9 +22,8 @@ int chdir(const char*);
 int dup(int);
 int getpid(void);
 char* sys_sbrk(int,int);
-int pause(int);
 int uptime(void);
-
+int sleep(int);
 // ulib.c
 int stat(const char*, struct stat*);
 char* strcpy(char*, const char*);
@@ -47,3 +46,6 @@ void printf(const char*, ...) __attribute__ ((format (printf, 1, 2)));
 // umalloc.c
 void* malloc(uint);
 void free(void*);
+//Khai báo User-space:
+int set_priority(int);
+int print_pinfo(void);
